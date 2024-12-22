@@ -16,10 +16,16 @@ import (
 	"strings"
 )
 
+var (
+	textlenlimit int = 200 // they might change this in the future
+	verbose      bool
+)
+
 func main() {
 	text := flag.String("in", "", "pass text in instead of reading from stdin")
 	voice := flag.String("voice", "", "the voice to use (blank means random)")
 	printvoices := flag.Bool("voices", false, "print out the available voices and exit")
+	flag.BoolVar(&verbose, "verbose", false, fmt.Sprintf("helps you figure out the chunking when stuff sounds weird and cut off (currently %d chars)", textlenlimit))
 	flag.Parse()
 	if *printvoices == true {
 		fmt.Fprintf(os.Stderr, "Voices:\n\t%s\n", strings.Join(voices, "\n\t"))
@@ -195,6 +201,11 @@ func tts(text, voice string) (io.Reader, error) {
 
 	// split the text into chunks
 	chunks := splitText(text)
+	if verbose {
+		for i, c := range chunks {
+			fmt.Fprintf(os.Stderr, "Chunk %d len(%d): %s\n", i, len(c), c)
+		}
+	}
 
 	client := &http.Client{}
 	for _, ep := range endpoints {
@@ -282,7 +293,7 @@ func tts(text, voice string) (io.Reader, error) {
 
 // i didnt make this and i wont bother to question it.
 // define a function to split the text into chunks of maximum 300 characters or less
-var splitterexp = regexp.MustCompile(".*?[.,!?:;-]|.+")
+var splitterexp = regexp.MustCompile(".*?[.!?:;]|.+")
 var splitterexp2 = regexp.MustCompile(".*?[ ]|.+")
 
 func splitText(text string) []string {
@@ -291,19 +302,22 @@ func splitText(text string) []string {
 	var sc []string
 	for _, chunk := range splitterexp.FindAllString(text, -1) {
 		// iterate through the chunks to check for their lengths
-		if len(chunk) > 300 {
+		if len(chunk) > textlenlimit {
 			// Split chunk further into smaller parts
 			sc = append(sc, splitterexp2.FindAllString(chunk, -1)...)
 		} else {
 			sc = append(sc, chunk)
 		}
 	}
+	//for i, c := range sc {
+	//	fmt.Fprintf(os.Stderr, "Subchunk %d len(%d): %s\n", i, len(c), c)
+	//}
 
 	var mergedchunks []string
 	currentchunk := ""
 	for _, sepchunk := range sc {
 		// check if adding the current chunk would exceed the limit of 300 characters
-		if len(currentchunk)+len(sepchunk) <= 300 {
+		if len(currentchunk)+len(sepchunk) <= textlenlimit {
 			currentchunk += sepchunk
 		} else {
 			// start a new merged chunk
